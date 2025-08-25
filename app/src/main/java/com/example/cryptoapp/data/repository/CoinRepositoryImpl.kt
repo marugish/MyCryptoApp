@@ -1,0 +1,47 @@
+package com.example.cryptoapp.data.repository
+
+import android.app.Application
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.map
+import com.example.cryptoapp.data.database.AppDatabase
+import com.example.cryptoapp.data.mapper.CoinMapper
+import com.example.cryptoapp.data.network.ApiFactory
+import com.example.cryptoapp.domain.CoinInfo
+import com.example.cryptoapp.domain.CoinRepository
+import kotlinx.coroutines.delay
+
+
+class CoinRepositoryImpl(
+    private val application: Application
+): CoinRepository {
+    private val coinInfoDao = AppDatabase.getInstance(application).coinInfoDao()
+    private val mapper = CoinMapper()
+    private val apiService = ApiFactory.apiService
+
+    override fun getCoinInfoList(): LiveData<List<CoinInfo>> {
+        return coinInfoDao.getPriceList().map { dbModelList ->
+            dbModelList.map { dbModel ->
+                mapper.mapDbModelToEntity(dbModel)
+            }
+        }
+    }
+
+    override fun getCoinInfo(fromSymbol: String): LiveData<CoinInfo> {
+        return coinInfoDao.getPriceInfoAboutCoin(fromSymbol).map { dbModel ->
+            mapper.mapDbModelToEntity(dbModel)
+        }
+    }
+
+    override suspend fun loadData() {
+        while (true) {
+            val topCoins = apiService.getTopCoinsInfo(limit = 50)
+            val fSyms = mapper.mapNamesListToString(topCoins)
+            val jsonContainer = apiService.getFullPriceList(fSyms = fSyms)
+            val coinInfoDtoList = mapper.mapJsonContainerToListCoinInfo(jsonContainer)
+            val dbModelList = coinInfoDtoList.map { mapper.mapDtoToDbModel(it) }
+            coinInfoDao.insertPriceList(dbModelList)
+            delay(10000)
+        }
+    }
+
+}
